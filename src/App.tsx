@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download, RefreshCw } from 'lucide-react';
+import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download, RefreshCw, Save } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 declare global {
   interface Window {
@@ -153,6 +155,52 @@ export default function App() {
       const index = parseInt(indexStr, 10);
       handleDownloadImage(index, dataUrl);
     });
+  };
+
+  const handleDownloadAllData = async () => {
+    if (!result) return;
+    
+    const zip = new JSZip();
+    const cleanTopic = removeAccents(topic);
+    
+    const parts = result.split(/(?=Từ vựng trong video|SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
+    
+    const vocabSection = parts.find(p => p.trim().startsWith('Từ vựng trong video'));
+    if (vocabSection) {
+      zip.file('VOCABULARY.txt', vocabSection.replace('Từ vựng trong video', '').trim());
+    }
+    
+    const imagePromptSection = parts.find(p => p.trim().startsWith('IMAGE PROMPTS'));
+    if (imagePromptSection) {
+      zip.file('Image_prompt.txt', imagePromptSection.replace('IMAGE PROMPTS', '').trim());
+    }
+    
+    const videoPromptSection = parts.find(p => p.trim().startsWith('VIDEO PROMPTS'));
+    if (videoPromptSection) {
+      zip.file('video_prompt.txt', videoPromptSection.replace('VIDEO PROMPTS', '').trim());
+    }
+    
+    const scriptSection = parts.find(p => p.trim().startsWith('SCENE SCRIPTS'));
+    if (scriptSection) {
+      zip.file('SCENE_SCRIPTS.txt', scriptSection.replace('SCENE SCRIPTS', '').trim());
+    }
+    
+    const imageKeys = Object.keys(generatedImages);
+    if (imageKeys.length > 0) {
+      const imageZip = new JSZip();
+      imageKeys.forEach(indexStr => {
+        const index = parseInt(indexStr, 10);
+        const dataUrl = generatedImages[index];
+        const base64Data = dataUrl.split(',')[1];
+        const sceneId = (index + 1).toString().padStart(2, '0');
+        imageZip.file(`${cleanTopic}_${sceneId}.png`, base64Data, { base64: true });
+      });
+      const imageZipContent = await imageZip.generateAsync({ type: 'blob' });
+      zip.file('image.zip', imageZipContent);
+    }
+    
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, `${cleanTopic}.zip`);
   };
 
   const generateSingleImage = async (index: number, promptText: string) => {
@@ -697,6 +745,13 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                         Tải toàn bộ ảnh
                       </button>
                     )}
+                    <button
+                      onClick={handleDownloadAllData}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 hover:text-indigo-700 transition-colors text-indigo-600 shadow-sm"
+                    >
+                      <Save size={14} />
+                      Lưu toàn bộ data
+                    </button>
                     <button
                       onClick={copyVocabulary}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
