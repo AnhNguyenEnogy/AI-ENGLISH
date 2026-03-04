@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download } from 'lucide-react';
+import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download, RefreshCw } from 'lucide-react';
 
 const TOPICS = [
   "Động vật", "Động vật nông trại", "Động vật hoang dã", "Động vật biển", "Các loài chim",
@@ -34,6 +34,12 @@ const AUTO_IMAGE_OPTIONS = [
   { id: "NO", label: "KHÔNG" }
 ];
 
+const ASPECT_RATIOS = [
+  { id: "9:16", label: "9:16 (Dọc)" },
+  { id: "16:9", label: "16:9 (Ngang)" },
+  { id: "1:1", label: "1:1 (Vuông)" }
+];
+
 export default function App() {
   const [topic, setTopic] = useState(TOPICS[0]);
   const [numScenes, setNumScenes] = useState(1);
@@ -41,6 +47,7 @@ export default function App() {
   const [childName, setChildName] = useState('');
   const [clothingMode, setClothingMode] = useState(CLOTHING_MODES[0].id);
   const [autoGenerateImages, setAutoGenerateImages] = useState(AUTO_IMAGE_OPTIONS[0].id);
+  const [aspectRatio, setAspectRatio] = useState(ASPECT_RATIOS[0].id);
   const [parentImage, setParentImage] = useState<{ data: string, mimeType: string } | null>(null);
   const [childImage, setChildImage] = useState<{ data: string, mimeType: string } | null>(null);
   
@@ -103,6 +110,53 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleDownloadAllImages = () => {
+    Object.entries(generatedImages).forEach(([indexStr, dataUrl]) => {
+      const index = parseInt(indexStr, 10);
+      handleDownloadImage(index, dataUrl);
+    });
+  };
+
+  const generateSingleImage = async (index: number, promptText: string) => {
+    setGeneratingImages(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const parts: any[] = [];
+      
+      if (parentImage) {
+        parts.push({ inlineData: { data: parentImage.data, mimeType: parentImage.mimeType } });
+      }
+      if (childImage) {
+        parts.push({ inlineData: { data: childImage.data, mimeType: childImage.mimeType } });
+      }
+      parts.push({ text: promptText });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts },
+        config: {
+          imageConfig: {
+            aspectRatio: aspectRatio
+          }
+        }
+      });
+      
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          setGeneratedImages(prev => ({
+            ...prev,
+            [index]: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`
+          }));
+          break;
+        }
+      }
+    } catch (err) {
+      console.error(`Error generating image for scene ${index + 1}:`, err);
+    } finally {
+      setGeneratingImages(false);
+    }
+  };
+
   const generateImages = async (promptsToUse?: string[]) => {
     const prompts = promptsToUse || extractImagePrompts(result);
     if (prompts.length === 0) return;
@@ -132,6 +186,11 @@ export default function App() {
           const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: { parts },
+            config: {
+              imageConfig: {
+                aspectRatio: aspectRatio
+              }
+            }
           });
           
           for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -491,6 +550,22 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                   </select>
                 </div>
 
+                <div>
+                  <label htmlFor="aspectRatio" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Khổ ảnh
+                  </label>
+                  <select
+                    id="aspectRatio"
+                    value={aspectRatio}
+                    onChange={(e) => setAspectRatio(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  >
+                    {ASPECT_RATIOS.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <button
                   onClick={generateContent}
                   disabled={loading}
@@ -540,15 +615,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
               <div className="border-b border-slate-100 bg-slate-50/50 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <FileText size={16} className="text-slate-400" /> Kịch bản
-                  </div>
-                  <div className="w-px h-4 bg-slate-200" />
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <ImageIcon size={16} className="text-slate-400" /> Prompt Ảnh
-                  </div>
-                  <div className="w-px h-4 bg-slate-200" />
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <Video size={16} className="text-slate-400" /> Prompt Video
+                    <FileText size={16} className="text-slate-400" /> Kết quả
                   </div>
                 </div>
                 
@@ -596,14 +663,25 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     <ImageIcon size={20} className="text-indigo-600" />
                     Ảnh đã tạo
                   </h3>
-                  <button
-                    onClick={() => generateImages()}
-                    disabled={generatingImages || extractImagePrompts(result).length === 0}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
-                  >
-                    {generatingImages ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
-                    Tạo ảnh
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {Object.keys(generatedImages).length > 0 && (
+                      <button
+                        onClick={handleDownloadAllImages}
+                        className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                      >
+                        <Download size={16} />
+                        Tải toàn bộ ảnh
+                      </button>
+                    )}
+                    <button
+                      onClick={() => generateImages()}
+                      disabled={generatingImages || extractImagePrompts(result).length === 0}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+                    >
+                      {generatingImages ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                      Tạo ảnh
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="space-y-8">
@@ -617,13 +695,23 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                           <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
                             <img src={generatedImages[index]} alt={`Cảnh ${index + 1}`} className="w-full object-cover" />
                           </div>
-                          <button
-                            onClick={() => handleDownloadImage(index, generatedImages[index])}
-                            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                          >
-                            <Download size={16} />
-                            Tải ảnh
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDownloadImage(index, generatedImages[index])}
+                              className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors flex-1 justify-center"
+                            >
+                              <Download size={16} />
+                              Tải ảnh
+                            </button>
+                            <button
+                              onClick={() => generateSingleImage(index, prompt)}
+                              disabled={generatingImages}
+                              className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors flex-1 justify-center disabled:opacity-50"
+                            >
+                              {generatingImages ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                              Tạo lại ảnh
+                            </button>
+                          </div>
                         </div>
                       ) : generatingImages ? (
                         <div className="w-full aspect-video bg-slate-200 animate-pulse rounded-xl flex items-center justify-center text-slate-400 border border-slate-200">
