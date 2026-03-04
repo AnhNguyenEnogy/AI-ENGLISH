@@ -164,41 +164,43 @@ export default function App() {
     
     const zip = new JSZip();
     const cleanTopic = removeAccents(topic);
+    const rootFolder = zip.folder(cleanTopic);
+    if (!rootFolder) return;
     
     const parts = result.split(/(?=Từ vựng trong video|SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
     
     const vocabSection = parts.find(p => p.trim().startsWith('Từ vựng trong video'));
     if (vocabSection) {
-      zip.file('VOCABULARY.txt', vocabSection.replace('Từ vựng trong video', '').trim());
+      rootFolder.file('VOCABULARY.txt', vocabSection.replace('Từ vựng trong video', '').trim());
     }
     
     const imagePromptSection = parts.find(p => p.trim().startsWith('IMAGE PROMPTS'));
     if (imagePromptSection) {
-      zip.file('Image_prompt.txt', imagePromptSection.replace('IMAGE PROMPTS', '').trim());
+      rootFolder.file('image_prompt.txt', imagePromptSection.replace('IMAGE PROMPTS', '').trim());
     }
     
     const videoPromptSection = parts.find(p => p.trim().startsWith('VIDEO PROMPTS'));
     if (videoPromptSection) {
-      zip.file('video_prompt.txt', videoPromptSection.replace('VIDEO PROMPTS', '').trim());
+      rootFolder.file('video_prompt.txt', videoPromptSection.replace('VIDEO PROMPTS', '').trim());
     }
     
     const scriptSection = parts.find(p => p.trim().startsWith('SCENE SCRIPTS'));
     if (scriptSection) {
-      zip.file('SCENE_SCRIPTS.txt', scriptSection.replace('SCENE SCRIPTS', '').trim());
+      rootFolder.file('SCENE_SCRIPTS.txt', scriptSection.replace('SCENE SCRIPTS', '').trim());
     }
     
     const imageKeys = Object.keys(generatedImages);
     if (imageKeys.length > 0) {
-      const imageZip = new JSZip();
-      imageKeys.forEach(indexStr => {
-        const index = parseInt(indexStr, 10);
-        const dataUrl = generatedImages[index];
-        const base64Data = dataUrl.split(',')[1];
-        const sceneId = (index + 1).toString().padStart(2, '0');
-        imageZip.file(`${cleanTopic}_${sceneId}.png`, base64Data, { base64: true });
-      });
-      const imageZipContent = await imageZip.generateAsync({ type: 'blob' });
-      zip.file('image.zip', imageZipContent);
+      const imagesFolder = rootFolder.folder('images');
+      if (imagesFolder) {
+        imageKeys.forEach(indexStr => {
+          const index = parseInt(indexStr, 10);
+          const dataUrl = generatedImages[index];
+          const base64Data = dataUrl.split(',')[1];
+          const sceneId = (index + 1).toString().padStart(2, '0');
+          imagesFolder.file(`scene_${sceneId}.png`, base64Data, { base64: true });
+        });
+      }
     }
     
     const content = await zip.generateAsync({ type: 'blob' });
@@ -500,7 +502,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F8FC] text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-900 pb-24">
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -518,7 +520,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
           
           {/* Configuration Panel */}
           <div className="space-y-6">
-            <div className="bg-white rounded-[24px] p-8 shadow-[0_10px_25px_rgba(0,0,0,0.03)] border border-slate-100 transition-all hover:shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+            <div className="card">
               
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -530,7 +532,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="characterPair"
                       value={characterPair}
                       onChange={(e) => setCharacterPair(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-[13px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {CHARACTER_PAIRS.map((t) => (
                         <option key={t.id} value={t.id}>{t.label}</option>
@@ -548,7 +550,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       value={childName}
                       onChange={(e) => setChildName(e.target.value)}
                       placeholder="VD: Bi"
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-[13px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50 placeholder:text-slate-400"
+                      className=""
                     />
                   </div>
 
@@ -560,7 +562,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="clothingMode"
                       value={clothingMode}
                       onChange={(e) => setClothingMode(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-3 py-2.5 text-[13px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {CLOTHING_MODES.map((t) => (
                         <option key={t.id} value={t.id}>{t.label}</option>
@@ -582,11 +584,11 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[11px] font-medium text-center py-2 pt-6">Ảnh cha/mẹ</div>
                         </div>
                       ) : (
-                        <label className="flex flex-col items-center justify-center w-full h-40 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-[14px] cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all group">
-                          <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <label className="upload-box group">
+                          <div className="icon-wrapper">
                             <Upload size={18} className="text-indigo-500" />
                           </div>
-                          <span className="text-[13px] text-slate-600 font-medium">Ảnh cha</span>
+                          <span className="text-[13px] text-slate-600 font-medium">Tải ảnh cha</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setParentImage)} />
                         </label>
                       )}
@@ -603,11 +605,11 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent text-white text-[11px] font-medium text-center py-2 pt-6">Ảnh của bé</div>
                         </div>
                       ) : (
-                        <label className="flex flex-col items-center justify-center w-full h-40 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-[14px] cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all group">
-                          <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                        <label className="upload-box group">
+                          <div className="icon-wrapper">
                             <Upload size={18} className="text-indigo-500" />
                           </div>
-                          <span className="text-[13px] text-slate-600 font-medium">Ảnh bé</span>
+                          <span className="text-[13px] text-slate-600 font-medium">Tải ảnh bé</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setChildImage)} />
                         </label>
                       )}
@@ -624,7 +626,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="topic"
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-2 py-2.5 text-[12px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {TOPICS.map((t) => (
                         <option key={t} value={t}>{t}</option>
@@ -640,7 +642,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="numScenes"
                       value={numScenes}
                       onChange={(e) => setNumScenes(Number(e.target.value))}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-2 py-2.5 text-[12px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {SCENE_COUNTS.map((n) => (
                         <option key={n} value={n}>{n}</option>
@@ -656,7 +658,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="autoGenerateImages"
                       value={autoGenerateImages}
                       onChange={(e) => setAutoGenerateImages(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-2 py-2.5 text-[12px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {AUTO_IMAGE_OPTIONS.map((t) => (
                         <option key={t.id} value={t.id}>{t.label}</option>
@@ -672,7 +674,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       id="aspectRatio"
                       value={aspectRatio}
                       onChange={(e) => setAspectRatio(e.target.value)}
-                      className="w-full bg-slate-50/50 border border-slate-200 rounded-xl px-2 py-2.5 text-[12px] focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 hover:bg-slate-50"
+                      className=""
                     >
                       {ASPECT_RATIOS.map((t) => (
                         <option key={t.id} value={t.id}>{t.label}</option>
@@ -684,7 +686,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                 <button
                   onClick={generateContent}
                   disabled={loading}
-                  className="w-full mt-4 bg-gradient-to-r from-[#6C5CE7] to-[#4F8CFF] hover:from-[#5A4CD1] hover:to-[#3E7BE6] text-white font-bold tracking-wide uppercase rounded-xl px-4 py-4 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-indigo-200/50 hover:shadow-indigo-300/50 transform hover:-translate-y-0.5 active:translate-y-0"
+                  className="primary-button mt-4"
                 >
                   {loading ? (
                     <>
@@ -700,37 +702,60 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                 </button>
               </div>
             </div>
-            
-            <a 
-              href="#" 
-              className="block w-full bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-indigo-600 font-bold tracking-wide uppercase rounded-xl px-4 py-4 text-center transition-all shadow-sm"
-            >
-              THAM GIA NHÓM ZALO
-            </a>
           </div>
 
           {/* Main Content Area */}
           <div className="space-y-8">
-            <div className="bg-white rounded-[24px] shadow-[0_10px_25px_rgba(0,0,0,0.03)] border border-slate-100 min-h-[600px] flex flex-col overflow-hidden transition-all hover:shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+            <div className="result-panel min-h-[600px] flex flex-col overflow-hidden transition-all">
               <div className="border-b border-slate-100 bg-white px-6 py-5 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
                   <h2 className="text-base font-bold text-slate-800 uppercase tracking-wide">KẾT QUẢ</h2>
                 </div>
-                
-                {result && (
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <button
-                      onClick={handleDownloadAllData}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 hover:text-indigo-700 transition-colors text-indigo-600 shadow-sm"
-                    >
-                      <Save size={14} />
-                      Lưu data
-                    </button>
-                  </div>
-                )}
               </div>
 
-              <div className="p-6 flex-1 overflow-auto bg-slate-50/30">
+              {/* Fixed Utility Toolbar */}
+              {result && (
+                <div className="bg-slate-50/80 backdrop-blur-sm border-b border-slate-200 px-6 py-3 sticky top-[73px] z-10 flex items-center gap-3 overflow-x-auto">
+                  <button
+                    onClick={handleDownloadAllData}
+                    className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium bg-gradient-to-r from-[#27ae60] to-[#2ecc71] text-white rounded-full hover:shadow-[0_0_10px_rgba(39,174,96,0.4)] transition-all whitespace-nowrap"
+                  >
+                    <Save size={14} />
+                    Lưu Data
+                  </button>
+                  <button
+                    onClick={handleDownloadAllImages}
+                    disabled={Object.keys(generatedImages).length === 0}
+                    className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium bg-gradient-to-r from-[#3b82f6] to-[#60a5fa] text-white rounded-full hover:shadow-[0_0_10px_rgba(59,130,246,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    <Download size={14} />
+                    Tải Ảnh
+                  </button>
+                  <button
+                    onClick={copyVocabulary}
+                    className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white rounded-full hover:shadow-[0_0_10px_rgba(139,92,246,0.4)] transition-all whitespace-nowrap"
+                  >
+                    {copiedVocab ? <Check size={14} /> : <Copy size={14} />}
+                    Copy Vocabulary
+                  </button>
+                  <button
+                    onClick={() => copySection('IMAGE PROMPTS', setCopiedImage)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white rounded-full hover:shadow-[0_0_10px_rgba(139,92,246,0.4)] transition-all whitespace-nowrap"
+                  >
+                    {copiedImage ? <Check size={14} /> : <Copy size={14} />}
+                    Copy Image Prompt
+                  </button>
+                  <button
+                    onClick={() => copySection('VIDEO PROMPTS', setCopiedVideo)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium bg-gradient-to-r from-[#8b5cf6] to-[#a78bfa] text-white rounded-full hover:shadow-[0_0_10px_rgba(139,92,246,0.4)] transition-all whitespace-nowrap"
+                  >
+                    {copiedVideo ? <Check size={14} /> : <Copy size={14} />}
+                    Copy Video Prompt
+                  </button>
+                </div>
+              )}
+
+              <div className="p-7 flex-1 overflow-auto bg-white">
                 {!result && !loading ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4 min-h-[400px]">
                     <div className="w-16 h-16 rounded-2xl bg-slate-100/50 flex items-center justify-center border border-slate-100">
@@ -842,7 +867,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
 
             {/* Render Images Section */}
             {(extractImagePrompts(result).length > 0 || Object.keys(generatedImages).length > 0) && (
-              <div className="bg-white rounded-[24px] p-8 shadow-[0_10px_25px_rgba(0,0,0,0.03)] border border-slate-100 transition-all hover:shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+              <div className="result-panel transition-all">
                 <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
                     <h3 className="text-base font-bold text-slate-800 flex items-center gap-2 uppercase tracking-wide">
@@ -919,6 +944,14 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
           </div>
 
       </main>
+
+      {/* Floating Zalo Button */}
+      <a
+        href="#"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-[#27ae60] to-[#2ecc71] text-white font-medium px-6 py-3 rounded-full shadow-[0_0_15px_rgba(39,174,96,0.5)] animate-pulse hover:scale-105 transition-transform whitespace-nowrap"
+      >
+        Hãy tham gia cộng đồng AI để học thêm nhiều kiến thức
+      </a>
     </div>
   );
 }
