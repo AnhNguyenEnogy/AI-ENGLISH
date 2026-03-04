@@ -1,6 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download, RefreshCw } from 'lucide-react';
+
+declare global {
+  interface Window {
+    aistudio?: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
 
 const TOPICS = [
   "Động vật", "Động vật nông trại", "Động vật hoang dã", "Động vật biển", "Các loài chim",
@@ -55,6 +64,7 @@ export default function App() {
   const [result, setResult] = useState('');
   const [copiedImage, setCopiedImage] = useState(false);
   const [copiedVideo, setCopiedVideo] = useState(false);
+  const [copiedVocab, setCopiedVocab] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
   const [generatingImages, setGeneratingImages] = useState(false);
 
@@ -74,7 +84,7 @@ export default function App() {
 
   const copySection = (sectionName: string, setCopied: (v: boolean) => void) => {
     if (!result) return;
-    const parts = result.split(/(?=SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
+    const parts = result.split(/(?=Từ vựng trong video|SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
     const section = parts.find(p => p.trim().startsWith(sectionName));
     if (section) {
       const textToCopy = section.replace(sectionName, '').trim();
@@ -84,8 +94,36 @@ export default function App() {
     }
   };
 
+  const copyVocabulary = () => {
+    if (!result) return;
+    const parts = result.split(/(?=Từ vựng trong video|SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
+    const section = parts.find(p => p.trim().startsWith('Từ vựng trong video'));
+    if (section) {
+      const lines = section.split('\n').map(l => l.trim()).filter(l => l);
+      let vocabList = [];
+      let currentVocab = { vi: '', en: '', ipa: '' };
+      
+      for (const line of lines) {
+        if (line.startsWith('Từ tiếng Việt:')) {
+          if (currentVocab.vi) vocabList.push({...currentVocab});
+          currentVocab = { vi: line.replace('Từ tiếng Việt:', '').trim(), en: '', ipa: '' };
+        } else if (line.startsWith('Tiếng Anh:')) {
+          currentVocab.en = line.replace('Tiếng Anh:', '').trim();
+        } else if (line.startsWith('Phiên âm:')) {
+          currentVocab.ipa = line.replace('Phiên âm:', '').trim();
+        }
+      }
+      if (currentVocab.vi) vocabList.push({...currentVocab});
+      
+      const textToCopy = vocabList.map(v => `${v.vi} - ${v.en} - ${v.ipa}`).join('\n');
+      navigator.clipboard.writeText(textToCopy);
+      setCopiedVocab(true);
+      setTimeout(() => setCopiedVocab(false), 2000);
+    }
+  };
+
   const extractImagePrompts = (text: string) => {
-    const parts = text.split(/(?=SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
+    const parts = text.split(/(?=Từ vựng trong video|SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
     const imageSection = parts.find(p => p.trim().startsWith('IMAGE PROMPTS'));
     if (!imageSection) return [];
     
@@ -284,7 +322,19 @@ ${parentRole} question 2
 ${childRole} answer
 
 OUTPUT FORMAT
-The output must contain exactly three sections formatted exactly like the example below. Do not use Markdown headings like "#", just use the exact text for section headers.
+The output must contain exactly four sections formatted exactly like the example below. Do not use Markdown headings like "#", just use the exact text for section headers.
+
+Từ vựng trong video
+Extract the vocabulary words that the parent asks the child in the scenes.
+For each vocabulary word, display three fields:
+Từ tiếng Việt: [Vietnamese word]
+Tiếng Anh: [English word]
+Phiên âm: [IPA pronunciation]
+
+Example:
+Từ tiếng Việt: con mèo
+Tiếng Anh: Cat
+Phiên âm: /kæt/
 
 SCENE SCRIPTS
 Must be written in Vietnamese. Each scene script must be on a single paragraph.
@@ -331,6 +381,23 @@ Do not summarize the dialogue.
 The dialogue in VIDEO PROMPTS must match the dialogue in SCENE SCRIPTS exactly.
 
 EXAMPLE OUTPUT FORMAT:
+
+Từ vựng trong video
+Từ tiếng Việt: con khỉ
+Tiếng Anh: Monkey
+Phiên âm: /ˈmʌŋki/
+
+Từ tiếng Việt: con voi
+Tiếng Anh: Elephant
+Phiên âm: /ˈelɪfənt/
+
+Từ tiếng Việt: con sư tử
+Tiếng Anh: Lion
+Phiên âm: /ˈlaɪən/
+
+Từ tiếng Việt: con hươu cao cổ
+Tiếng Anh: Giraffe
+Phiên âm: /dʒəˈrɑːf/
 
 SCENE SCRIPTS
 Scene 1 – Khu linh trưởng và voi ${parentVietnamese} và ${actualChildName} đứng cạnh nhau trong sở thú. Trước mặt họ là một con khỉ nhỏ đang ngồi trên tảng đá gần hàng rào. ${parentVietnamese} chỉ vào con khỉ và hỏi: "${actualChildName} ơi, con khỉ tiếng Anh là gì con?" Con nhìn con khỉ và trả lời: "Monkey!" Ngay cạnh đó là một chú voi con đang đứng ăn cỏ. ${parentVietnamese} chỉ vào con voi và hỏi: "Thế còn con voi thì sao con?" Con trả lời: "Elephant!"
@@ -621,6 +688,22 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                 
                 {result && (
                   <div className="flex items-center gap-2">
+                    {Object.keys(generatedImages).length > 0 && (
+                      <button
+                        onClick={handleDownloadAllImages}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
+                      >
+                        <Download size={14} />
+                        Tải toàn bộ ảnh
+                      </button>
+                    )}
+                    <button
+                      onClick={copyVocabulary}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
+                    >
+                      {copiedVocab ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                      {copiedVocab ? 'Đã chép' : 'Sao chép tất cả'}
+                    </button>
                     <button
                       onClick={() => copySection('IMAGE PROMPTS', setCopiedImage)}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
@@ -664,15 +747,6 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     Ảnh đã tạo
                   </h3>
                   <div className="flex items-center gap-2">
-                    {Object.keys(generatedImages).length > 0 && (
-                      <button
-                        onClick={handleDownloadAllImages}
-                        className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
-                      >
-                        <Download size={16} />
-                        Tải toàn bộ ảnh
-                      </button>
-                    )}
                     <button
                       onClick={() => generateImages()}
                       disabled={generatingImages || extractImagePrompts(result).length === 0}
