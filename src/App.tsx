@@ -36,13 +36,14 @@ const CHARACTER_PAIRS = [
 ];
 
 const CLOTHING_MODES = [
-  { id: "Fixed clothing", label: "Trang phục cố định" },
-  { id: "Automatic clothing", label: "Trang phục tự động" }
+  { id: "Automatic clothing", label: "Trang phục Phù hợp bối cảnh" },
+  { id: "Fixed clothing", label: "Trang phục cố định" }
+
 ];
 
 const AUTO_IMAGE_OPTIONS = [
-  { id: "YES", label: "CÓ" },
-  { id: "NO", label: "KHÔNG" }
+  { id: "YES", label: "KHÔNG" },
+  { id: "NO", label: "CÓ" }
 ];
 
 const ASPECT_RATIOS = [
