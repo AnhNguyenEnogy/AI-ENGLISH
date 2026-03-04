@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check } from 'lucide-react';
+import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X } from 'lucide-react';
 
 const TOPICS = [
   "Động vật", "Động vật nông trại", "Động vật hoang dã", "Động vật biển", "Các loài chim",
@@ -17,13 +17,45 @@ const TOPICS = [
 
 const SCENE_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+const CHARACTER_PAIRS = [
+  "Father and Son",
+  "Father and Daughter",
+  "Mother and Son",
+  "Mother and Daughter"
+];
+
+const CLOTHING_MODES = [
+  "Fixed clothing",
+  "Automatic clothing"
+];
+
 export default function App() {
   const [topic, setTopic] = useState(TOPICS[0]);
   const [numScenes, setNumScenes] = useState(1);
+  const [characterPair, setCharacterPair] = useState(CHARACTER_PAIRS[0]);
+  const [childName, setChildName] = useState('');
+  const [clothingMode, setClothingMode] = useState(CLOTHING_MODES[0]);
+  const [parentImage, setParentImage] = useState<{ data: string, mimeType: string } | null>(null);
+  const [childImage, setChildImage] = useState<{ data: string, mimeType: string } | null>(null);
+  
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
   const [copiedImage, setCopiedImage] = useState(false);
   const [copiedVideo, setCopiedVideo] = useState(false);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setImage: (img: { data: string, mimeType: string } | null) => void) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        setImage({ data: base64String, mimeType: file.type });
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setImage(null);
+    }
+  };
 
   const copySection = (sectionName: string, setCopied: (v: boolean) => void) => {
     if (!result) return;
@@ -42,16 +74,43 @@ export default function App() {
     setResult('');
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `You are an AI product designer and prompt engineer.
-Generate content for short animated educational videos where a Vietnamese father teaches his young son English vocabulary.
+      
+      let parentRole = characterPair.includes("Father") ? "Father" : "Mother";
+      let childRole = characterPair.includes("Son") ? "Son" : "Daughter";
+      
+      let defaultChildName = childRole === "Son" ? "con trai" : "con gái";
+      let actualChildName = childName.trim() !== "" ? childName.trim() : defaultChildName;
+      
+      let parentVietnamese = parentRole === "Father" ? "Cha" : "Mẹ";
+      
+      const promptText = `You are an AI product designer and prompt engineer.
+Generate content for short animated educational videos where a Vietnamese ${parentRole.toLowerCase()} teaches their young ${childRole.toLowerCase()} English vocabulary.
 
 Topic: ${topic}
 Number of scenes: ${numScenes}
 
+CHARACTER SYSTEM
+Character Pair: ${characterPair}
+Child's Name: ${actualChildName}
+Parent Role in Vietnamese: ${parentVietnamese}
+
+If reference images are provided (attached to this prompt), you MUST:
+1. Analyze the reference images.
+2. Describe the character appearance (hair style, hair color, face shape, skin tone, age appearance, facial features, general body type).
+3. Use that exact appearance description consistently in all IMAGE PROMPTS and VIDEO PROMPTS.
+
+If no reference images are provided, use this DEFAULT CHARACTER STYLE:
+Vietnamese ${parentRole.toLowerCase()} around 30 years old, Vietnamese ${childRole.toLowerCase()} around 5 years old.
+Style: cute animated Pixar style, friendly facial expressions, round soft facial features.
+
+CLOTHING MODE: ${clothingMode}
+If "Fixed clothing": The clothing remains the exact same in all scenes (e.g., ${parentRole.toLowerCase()} wearing blue shirt and jeans, ${childRole.toLowerCase()} wearing yellow T-shirt and shorts).
+If "Automatic clothing": Clothing automatically adapts to the scene environment (e.g., kitchen -> casual home clothes, park -> outdoor casual clothes).
+
 APP PURPOSE
-The application generates short learning scenes where a father teaches English words to his son by pointing at animals or objects that appear clearly in front of them.
-The father asks questions in Vietnamese.
-The son answers with the English word.
+The application generates short learning scenes where a ${parentRole.toLowerCase()} teaches English words to their ${childRole.toLowerCase()} by pointing at animals or objects that appear clearly in front of them.
+The ${parentRole.toLowerCase()} asks questions in Vietnamese.
+The ${childRole.toLowerCase()} answers with the English word.
 All scripts must be written in Vietnamese.
 All prompts must be written in English.
 
@@ -59,15 +118,11 @@ VIDEO STYLE
 All scenes must follow this visual style:
 High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
 
-CHARACTERS
-Father: Vietnamese father, about 30 years old, kind and gentle, casual clothes.
-Son: Vietnamese boy, 5 years old, cute face, big eyes, round cheeks, cheerful personality.
-
 VERY IMPORTANT CAMERA RULE
 The camera must always face the characters from the FRONT.
-Both father and son must always stand next to each other and face the camera.
+Both ${parentRole.toLowerCase()} and ${childRole.toLowerCase()} must always stand next to each other and face the camera.
 The animal or object must also appear in the SAME FRAME close to them.
-The father must be able to POINT at the object or animal.
+The ${parentRole.toLowerCase()} must be able to POINT at the object or animal.
 The object must NOT be far away.
 Everything must appear clearly in one frame.
 
@@ -75,31 +130,34 @@ SCENE STRUCTURE
 Each scene must contain:
 a clear environment
 a visible animal or object
-father pointing at it
-son looking at it
+${parentRole.toLowerCase()} pointing at it
+${childRole.toLowerCase()} looking at it
 The animal or object must be close to them inside the same frame.
 
 Each scene must contain EXACTLY:
-Father question 1
-Son answer
-Father question 2
-Son answer
+${parentRole} question 1
+${childRole} answer
+${parentRole} question 2
+${childRole} answer
 
 OUTPUT FORMAT
 The output must contain exactly three sections formatted exactly like the example below. Do not use Markdown headings like "#", just use the exact text for section headers.
 
 SCENE SCRIPTS
 Must be written in Vietnamese. Each scene script must be on a single paragraph.
+Example dialogue format:
+${parentVietnamese} hỏi: "${actualChildName} ơi, con mèo tiếng Anh là gì?"
+Con trả lời: "Cat!"
 
 IMAGE PROMPTS
 All prompts must be written in English.
-Each prompt must include: front camera view, father and son standing side by side, animal or object close to them, father pointing at object, son looking at object.
+Each prompt must include: character descriptions, character clothing, reference appearance if provided, front camera view, ${parentRole.toLowerCase()} and ${childRole.toLowerCase()} standing side by side, animal or object close to them, ${parentRole.toLowerCase()} pointing at object, ${childRole.toLowerCase()} looking at object.
 Each prompt MUST include this exact style description at the end: "High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K"
 Each prompt must be on a SEPARATE LINE. Each line contains EXACTLY ONE prompt. Do NOT combine multiple prompts in the same line. Do NOT use "." to separate prompts.
 
 VIDEO PROMPTS
 All prompts must be written in English.
-Each prompt must include: front camera angle, father and son standing together, animal or object close in front of them, father pointing at object, son answering.
+Each prompt must include: same character description, same character clothing, same character appearance, same animation style, front camera angle, ${parentRole.toLowerCase()} and ${childRole.toLowerCase()} standing together, animal or object close in front of them, ${parentRole.toLowerCase()} pointing at object, ${childRole.toLowerCase()} answering.
 Each prompt MUST include this exact style description at the end: "High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K"
 Each prompt must be on a SEPARATE LINE. Each line contains EXACTLY ONE prompt. Do NOT combine multiple prompts in the same line.
 
@@ -115,15 +173,15 @@ The number of IMAGE PROMPTS must be exactly the same as the number of scenes.
 The number of VIDEO PROMPTS must be exactly the same as the number of scenes.
 
 VIDEO PROMPTS must include the EXACT dialogue from SCENE SCRIPTS.
-The father must speak Vietnamese.
-The son must answer in English.
+The ${parentRole.toLowerCase()} must speak Vietnamese.
+The ${childRole.toLowerCase()} must answer in English.
 The dialogue must appear inside quotation marks.
 
 Example dialogue format inside video prompt:
-father says "Bi ơi, con mèo tiếng Anh là gì?"
-boy answers "Cat!"
-father asks "Thế còn con chó thì sao con?"
-boy answers "Dog!"
+${parentRole.toLowerCase()} says "${actualChildName} ơi, con mèo tiếng Anh là gì?"
+${childRole.toLowerCase()} answers "Cat!"
+${parentRole.toLowerCase()} asks "Thế còn con chó thì sao con?"
+${childRole.toLowerCase()} answers "Dog!"
 
 Do not change the wording of the dialogue.
 Do not summarize the dialogue.
@@ -132,20 +190,33 @@ The dialogue in VIDEO PROMPTS must match the dialogue in SCENE SCRIPTS exactly.
 EXAMPLE OUTPUT FORMAT:
 
 SCENE SCRIPTS
-Scene 1 – Khu linh trưởng và voi Cha và Bi đứng cạnh nhau trong sở thú. Trước mặt họ là một con khỉ nhỏ đang ngồi trên tảng đá gần hàng rào. Cha chỉ vào con khỉ và hỏi: "Bi ơi, con khỉ tiếng Anh là gì con?" Con nhìn con khỉ và trả lời: "Monkey!" Ngay cạnh đó là một chú voi con đang đứng ăn cỏ. Cha chỉ vào con voi và hỏi: "Thế còn con voi thì sao con?" Con trả lời: "Elephant!"
-Scene 2 – Đồng cỏ Safari Cha và Bi đứng cạnh nhau bên hàng rào gỗ. Trước mặt họ là một con sư tử con đang nằm sưởi nắng. Cha chỉ vào con sư tử và hỏi: "Bi ơi, con sư tử tiếng Anh là gì?" Con nhìn con sư tử và trả lời: "Lion!" Ngay cạnh đó có một con hươu cao cổ nhỏ đang cúi đầu xuống gần họ. Cha chỉ vào con hươu cao cổ và hỏi: "Thế còn con hươu cao cổ này thì sao con?" Con trả lời: "Giraffe!"
+Scene 1 – Khu linh trưởng và voi ${parentVietnamese} và ${actualChildName} đứng cạnh nhau trong sở thú. Trước mặt họ là một con khỉ nhỏ đang ngồi trên tảng đá gần hàng rào. ${parentVietnamese} chỉ vào con khỉ và hỏi: "${actualChildName} ơi, con khỉ tiếng Anh là gì con?" Con nhìn con khỉ và trả lời: "Monkey!" Ngay cạnh đó là một chú voi con đang đứng ăn cỏ. ${parentVietnamese} chỉ vào con voi và hỏi: "Thế còn con voi thì sao con?" Con trả lời: "Elephant!"
+Scene 2 – Đồng cỏ Safari ${parentVietnamese} và ${actualChildName} đứng cạnh nhau bên hàng rào gỗ. Trước mặt họ là một con sư tử con đang nằm sưởi nắng. ${parentVietnamese} chỉ vào con sư tử và hỏi: "${actualChildName} ơi, con sư tử tiếng Anh là gì?" Con nhìn con sư tử và trả lời: "Lion!" Ngay cạnh đó có một con hươu cao cổ nhỏ đang cúi đầu xuống gần họ. ${parentVietnamese} chỉ vào con hươu cao cổ và hỏi: "Thế còn con hươu cao cổ này thì sao con?" Con trả lời: "Giraffe!"
 
 IMAGE PROMPTS
-Scene 1 – Front camera view, a 30-year-old gentle Vietnamese father in casual clothes and his 5-year-old cute Vietnamese son with round cheeks and big eyes standing side by side facing the camera in a zoo enclosure, a cute baby monkey and a baby elephant are very close to them in the same frame, the father is pointing at the baby monkey, the son is looking cheerfully at the baby monkey, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
-Scene 2 – Front camera view, a 30-year-old gentle Vietnamese father in casual clothes and his 5-year-old cute Vietnamese son with round cheeks and big eyes standing side by side facing the camera next to a low wooden fence in a zoo, a cute baby lion and a baby giraffe are very close to them in the same frame, the father is pointing at the baby lion, the son is looking cheerfully at the baby lion, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
+Scene 1 – Front camera view, [Character Description of ${parentRole}], [Character Description of ${childRole}], standing side by side facing the camera in a zoo enclosure, a cute baby monkey and a baby elephant are very close to them in the same frame, the ${parentRole.toLowerCase()} is pointing at the baby monkey, the ${childRole.toLowerCase()} is looking cheerfully at the baby monkey, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
+Scene 2 – Front camera view, [Character Description of ${parentRole}], [Character Description of ${childRole}], standing side by side facing the camera next to a low wooden fence in a zoo, a cute baby lion and a baby giraffe are very close to them in the same frame, the ${parentRole.toLowerCase()} is pointing at the baby lion, the ${childRole.toLowerCase()} is looking cheerfully at the baby lion, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
 
 VIDEO PROMPTS
-Scene 1 – Front camera angle, a 30-year-old gentle Vietnamese father and his cute 5-year-old son standing together side by side facing the camera in a zoo, a baby monkey and a baby elephant are close in front of them in the same frame, the father points his finger at the baby monkey and speaks, the boy looks at the monkey and answers cheerfully, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
-Scene 2 – Front camera angle, a 30-year-old gentle Vietnamese father and his cute 5-year-old son standing together side by side facing the camera by a low wooden zoo fence, a baby lion and a baby giraffe are close in front of them in the same frame, the father points his finger at the baby lion and speaks, the boy looks at the lion and answers cheerfully, High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K`;
+Scene 1 – Front camera angle, [Character Description of ${parentRole}], [Character Description of ${childRole}], standing together side by side facing the camera in a zoo, a baby monkey and a baby elephant are close in front of them in the same frame, the ${parentRole.toLowerCase()} points his finger at the baby monkey and says "${actualChildName} ơi, con khỉ tiếng Anh là gì con?", the ${childRole.toLowerCase()} looks at the monkey and answers "Monkey!", High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K
+Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Character Description of ${childRole}], standing together side by side facing the camera by a low wooden zoo fence, a baby lion and a baby giraffe are close in front of them in the same frame, the ${parentRole.toLowerCase()} points his finger at the baby lion and says "${actualChildName} ơi, con sư tử tiếng Anh là gì?", the ${childRole.toLowerCase()} looks at the lion and answers "Lion!", High-quality 3D animated film style inspired by modern Western animated cinema, soft rounded and friendly character designs, slightly exaggerated facial expressions for emotional clarity, clean and smooth surfaces, richly detailed yet whimsical environments, cinematic lighting with warm golden-hour tones, soft shadows and gentle depth of field, non-photorealistic, stylized realism, emotionally expressive, heartwarming tone, professional studio-quality animation, no text overlays. quality 4K`;
+
+      const parts: any[] = [];
+      
+      if (parentImage) {
+        parts.push({ text: "Here is the reference image for the Parent:" });
+        parts.push({ inlineData: { data: parentImage.data, mimeType: parentImage.mimeType } });
+      }
+      if (childImage) {
+        parts.push({ text: "Here is the reference image for the Child:" });
+        parts.push({ inlineData: { data: childImage.data, mimeType: childImage.mimeType } });
+      }
+      
+      parts.push({ text: promptText });
 
       const response = await ai.models.generateContentStream({
         model: 'gemini-3.1-pro-preview',
-        contents: prompt,
+        contents: { parts },
       });
 
       let fullText = '';
@@ -189,6 +260,98 @@ Scene 2 – Front camera angle, a 30-year-old gentle Vietnamese father and his c
               </h2>
               
               <div className="space-y-5">
+                <div>
+                  <label htmlFor="characterPair" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Characters
+                  </label>
+                  <select
+                    id="characterPair"
+                    value={characterPair}
+                    onChange={(e) => setCharacterPair(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  >
+                    {CHARACTER_PAIRS.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="childName" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Child's Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    id="childName"
+                    value={childName}
+                    onChange={(e) => setChildName(e.target.value)}
+                    placeholder={`e.g. Bi (Default: ${characterPair.includes("Son") ? "con trai" : "con gái"})`}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="clothingMode" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Clothing Mode
+                  </label>
+                  <select
+                    id="clothingMode"
+                    value={clothingMode}
+                    onChange={(e) => setClothingMode(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  >
+                    {CLOTHING_MODES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700">
+                    Reference Images (Optional)
+                  </label>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Parent Image Upload */}
+                    <div className="relative">
+                      {parentImage ? (
+                        <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-slate-200">
+                          <img src={`data:${parentImage.mimeType};base64,${parentImage.data}`} alt="Parent Ref" className="w-full h-full object-cover" />
+                          <button onClick={() => setParentImage(null)} className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full hover:bg-black/70">
+                            <X size={14} />
+                          </button>
+                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Parent</div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center w-full aspect-square bg-slate-50 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                          <Upload size={20} className="text-slate-400 mb-2" />
+                          <span className="text-xs text-slate-500 font-medium">Parent Ref</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setParentImage)} />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Child Image Upload */}
+                    <div className="relative">
+                      {childImage ? (
+                        <div className="relative w-full aspect-square rounded-xl overflow-hidden border border-slate-200">
+                          <img src={`data:${childImage.mimeType};base64,${childImage.data}`} alt="Child Ref" className="w-full h-full object-cover" />
+                          <button onClick={() => setChildImage(null)} className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full hover:bg-black/70">
+                            <X size={14} />
+                          </button>
+                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Child</div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center w-full aspect-square bg-slate-50 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
+                          <Upload size={20} className="text-slate-400 mb-2" />
+                          <span className="text-xs text-slate-500 font-medium">Child Ref</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setChildImage)} />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label htmlFor="topic" className="block text-sm font-medium text-slate-700 mb-1.5">
                     Topic (Chủ đề)
@@ -254,7 +417,7 @@ Scene 2 – Front camera angle, a 30-year-old gentle Vietnamese father and his c
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  <span>Father & son standing side-by-side</span>
+                  <span>Parent & child standing side-by-side</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
