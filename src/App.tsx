@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X } from 'lucide-react';
+import { Loader2, Play, Settings, Image as ImageIcon, Video, FileText, Copy, Check, Upload, X, Download } from 'lucide-react';
 
 const TOPICS = [
   "Động vật", "Động vật nông trại", "Động vật hoang dã", "Động vật biển", "Các loài chim",
@@ -18,23 +18,29 @@ const TOPICS = [
 const SCENE_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const CHARACTER_PAIRS = [
-  "Father and Son",
-  "Father and Daughter",
-  "Mother and Son",
-  "Mother and Daughter"
+  { id: "Father and Son", label: "Cha và Con trai" },
+  { id: "Father and Daughter", label: "Cha và Con gái" },
+  { id: "Mother and Son", label: "Mẹ và Con trai" },
+  { id: "Mother and Daughter", label: "Mẹ và Con gái" }
 ];
 
 const CLOTHING_MODES = [
-  "Fixed clothing",
-  "Automatic clothing"
+  { id: "Fixed clothing", label: "Trang phục cố định" },
+  { id: "Automatic clothing", label: "Trang phục tự động" }
+];
+
+const AUTO_IMAGE_OPTIONS = [
+  { id: "YES", label: "CÓ" },
+  { id: "NO", label: "KHÔNG" }
 ];
 
 export default function App() {
   const [topic, setTopic] = useState(TOPICS[0]);
   const [numScenes, setNumScenes] = useState(1);
-  const [characterPair, setCharacterPair] = useState(CHARACTER_PAIRS[0]);
+  const [characterPair, setCharacterPair] = useState(CHARACTER_PAIRS[0].id);
   const [childName, setChildName] = useState('');
-  const [clothingMode, setClothingMode] = useState(CLOTHING_MODES[0]);
+  const [clothingMode, setClothingMode] = useState(CLOTHING_MODES[0].id);
+  const [autoGenerateImages, setAutoGenerateImages] = useState(AUTO_IMAGE_OPTIONS[0].id);
   const [parentImage, setParentImage] = useState<{ data: string, mimeType: string } | null>(null);
   const [childImage, setChildImage] = useState<{ data: string, mimeType: string } | null>(null);
   
@@ -42,6 +48,8 @@ export default function App() {
   const [result, setResult] = useState('');
   const [copiedImage, setCopiedImage] = useState(false);
   const [copiedVideo, setCopiedVideo] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
+  const [generatingImages, setGeneratingImages] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setImage: (img: { data: string, mimeType: string } | null) => void) => {
     const file = e.target.files?.[0];
@@ -69,9 +77,85 @@ export default function App() {
     }
   };
 
+  const extractImagePrompts = (text: string) => {
+    const parts = text.split(/(?=SCENE SCRIPTS|IMAGE PROMPTS|VIDEO PROMPTS)/);
+    const imageSection = parts.find(p => p.trim().startsWith('IMAGE PROMPTS'));
+    if (!imageSection) return [];
+    
+    const lines = imageSection.replace('IMAGE PROMPTS', '').trim().split('\n').filter(l => l.trim() !== '' && l.trim().startsWith('Scene'));
+    return lines;
+  };
+
+  const removeAccents = (str: string) => {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').replace(/\s+/g, '');
+  };
+
+  const handleDownloadImage = (index: number, dataUrl: string) => {
+    const cleanTopic = removeAccents(topic);
+    const sceneId = (index + 1).toString().padStart(2, '0');
+    const filename = `${cleanTopic}_${sceneId}.png`;
+    
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const generateImages = async (promptsToUse?: string[]) => {
+    const prompts = promptsToUse || extractImagePrompts(result);
+    if (prompts.length === 0) return;
+    
+    setGeneratingImages(true);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const newImages = { ...generatedImages };
+      
+      for (let i = 0; i < prompts.length; i++) {
+        const promptText = prompts[i];
+        
+        const parts: any[] = [];
+        
+        if (parentImage) {
+          parts.push({ inlineData: { data: parentImage.data, mimeType: parentImage.mimeType } });
+        }
+        if (childImage) {
+          parts.push({ inlineData: { data: childImage.data, mimeType: childImage.mimeType } });
+        }
+        
+        parts.push({ text: promptText });
+        
+        try {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts },
+          });
+          
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              newImages[i] = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+              setGeneratedImages({ ...newImages });
+              break;
+            }
+          }
+        } catch (err) {
+          console.error(`Error generating image for scene ${i + 1}:`, err);
+        }
+      }
+    } catch (error) {
+      console.error("Error generating images:", error);
+    } finally {
+      setGeneratingImages(false);
+    }
+  };
+
   const generateContent = async () => {
     setLoading(true);
     setResult('');
+    setGeneratedImages({});
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
@@ -224,6 +308,13 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
         fullText += chunk.text;
         setResult(fullText);
       }
+      
+      if (autoGenerateImages === 'YES') {
+        const extractedPrompts = extractImagePrompts(fullText);
+        if (extractedPrompts.length > 0) {
+          generateImages(extractedPrompts);
+        }
+      }
     } catch (error) {
       console.error(error);
       setResult('Error generating content. Please try again.');
@@ -256,13 +347,13 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
               <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
                 <Settings size={18} className="text-slate-400" />
-                Generation Settings
+                Cài đặt tạo nội dung
               </h2>
               
               <div className="space-y-5">
                 <div>
                   <label htmlFor="characterPair" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Characters
+                    Nhân vật
                   </label>
                   <select
                     id="characterPair"
@@ -271,28 +362,28 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                   >
                     {CHARACTER_PAIRS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t.id} value={t.id}>{t.label}</option>
                     ))}
                   </select>
                 </div>
 
                 <div>
                   <label htmlFor="childName" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Child's Name (Optional)
+                    Tên của bé (Không bắt buộc)
                   </label>
                   <input
                     type="text"
                     id="childName"
                     value={childName}
                     onChange={(e) => setChildName(e.target.value)}
-                    placeholder={`e.g. Bi (Default: ${characterPair.includes("Son") ? "con trai" : "con gái"})`}
+                    placeholder={`VD: Bi (Mặc định: ${characterPair.includes("Son") ? "con trai" : "con gái"})`}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                   />
                 </div>
 
                 <div>
                   <label htmlFor="clothingMode" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Clothing Mode
+                    Chế độ trang phục
                   </label>
                   <select
                     id="clothingMode"
@@ -301,14 +392,14 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                   >
                     {CLOTHING_MODES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t.id} value={t.id}>{t.label}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-slate-700">
-                    Reference Images (Optional)
+                    Ảnh tham chiếu (Không bắt buộc)
                   </label>
                   
                   <div className="grid grid-cols-2 gap-3">
@@ -320,12 +411,12 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                           <button onClick={() => setParentImage(null)} className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full hover:bg-black/70">
                             <X size={14} />
                           </button>
-                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Parent</div>
+                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Ảnh cha/mẹ</div>
                         </div>
                       ) : (
                         <label className="flex flex-col items-center justify-center w-full aspect-square bg-slate-50 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
                           <Upload size={20} className="text-slate-400 mb-2" />
-                          <span className="text-xs text-slate-500 font-medium">Parent Ref</span>
+                          <span className="text-xs text-slate-500 font-medium">Ảnh cha/mẹ</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setParentImage)} />
                         </label>
                       )}
@@ -339,12 +430,12 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                           <button onClick={() => setChildImage(null)} className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full hover:bg-black/70">
                             <X size={14} />
                           </button>
-                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Child</div>
+                          <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] text-center py-1">Ảnh của bé</div>
                         </div>
                       ) : (
                         <label className="flex flex-col items-center justify-center w-full aspect-square bg-slate-50 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-100 transition-colors">
                           <Upload size={20} className="text-slate-400 mb-2" />
-                          <span className="text-xs text-slate-500 font-medium">Child Ref</span>
+                          <span className="text-xs text-slate-500 font-medium">Ảnh của bé</span>
                           <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, setChildImage)} />
                         </label>
                       )}
@@ -354,7 +445,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
 
                 <div>
                   <label htmlFor="topic" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Topic (Chủ đề)
+                    Chủ đề
                   </label>
                   <select
                     id="topic"
@@ -370,7 +461,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
 
                 <div>
                   <label htmlFor="numScenes" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Number of Scenes
+                    Số cảnh
                   </label>
                   <select
                     id="numScenes"
@@ -379,7 +470,23 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                   >
                     {SCENE_COUNTS.map((n) => (
-                      <option key={n} value={n}>{n} {n === 1 ? 'Scene' : 'Scenes'}</option>
+                      <option key={n} value={n}>{n} cảnh</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="autoGenerateImages" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Tự động tạo ảnh
+                  </label>
+                  <select
+                    id="autoGenerateImages"
+                    value={autoGenerateImages}
+                    onChange={(e) => setAutoGenerateImages(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                  >
+                    {AUTO_IMAGE_OPTIONS.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
                     ))}
                   </select>
                 </div>
@@ -392,12 +499,12 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                   {loading ? (
                     <>
                       <Loader2 size={18} className="animate-spin" />
-                      Generating...
+                      Đang tạo...
                     </>
                   ) : (
                     <>
                       <Play size={18} />
-                      Generate Content
+                      Tạo nội dung
                     </>
                   )}
                 </button>
@@ -405,43 +512,43 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
             </div>
 
             <div className="bg-indigo-50 rounded-2xl p-6 border border-indigo-100">
-              <h3 className="text-sm font-semibold text-indigo-900 mb-2">Style Guidelines</h3>
+              <h3 className="text-sm font-semibold text-indigo-900 mb-2">Hướng dẫn phong cách</h3>
               <ul className="text-xs text-indigo-800 space-y-2">
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  <span><strong>High-quality 3D animated film</strong>, modern Western cinema style</span>
+                  <span><strong>Phim hoạt hình 3D chất lượng cao</strong>, phong cách điện ảnh phương Tây hiện đại</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  <span><strong>Front camera view</strong> only</span>
+                  <span>Chỉ sử dụng <strong>góc máy phía trước</strong></span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  <span>Parent & child standing side-by-side</span>
+                  <span>Cha/mẹ và bé đứng cạnh nhau</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <div className="mt-0.5 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  <span>Object close to them in the same frame</span>
+                  <span>Đồ vật nằm gần họ trong cùng một khung hình</span>
                 </li>
               </ul>
             </div>
           </div>
 
           {/* Main Content Area */}
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 min-h-[600px] flex flex-col overflow-hidden">
               <div className="border-b border-slate-100 bg-slate-50/50 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <FileText size={16} className="text-slate-400" /> Scripts
+                    <FileText size={16} className="text-slate-400" /> Kịch bản
                   </div>
                   <div className="w-px h-4 bg-slate-200" />
                   <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <ImageIcon size={16} className="text-slate-400" /> Image Prompts
+                    <ImageIcon size={16} className="text-slate-400" /> Prompt Ảnh
                   </div>
                   <div className="w-px h-4 bg-slate-200" />
                   <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
-                    <Video size={16} className="text-slate-400" /> Video Prompts
+                    <Video size={16} className="text-slate-400" /> Prompt Video
                   </div>
                 </div>
                 
@@ -452,14 +559,14 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
                     >
                       {copiedImage ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                      Copy Image Prompts
+                      {copiedImage ? 'Đã chép' : 'Sao chép Prompt Ảnh'}
                     </button>
                     <button
                       onClick={() => copySection('VIDEO PROMPTS', setCopiedVideo)}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
                     >
                       {copiedVideo ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                      Copy Video Prompts
+                      {copiedVideo ? 'Đã chép' : 'Sao chép Prompt Video'}
                     </button>
                   </div>
                 )}
@@ -471,7 +578,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                     <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
                       <Play size={24} className="text-slate-300" />
                     </div>
-                    <p className="text-sm">Select a topic and click Generate to create content.</p>
+                    <p className="text-sm">Chọn chủ đề và nhấn Tạo nội dung để bắt đầu.</p>
                   </div>
                 ) : (
                   <div className="prose prose-slate prose-sm max-w-none prose-p:leading-relaxed whitespace-pre-wrap font-sans">
@@ -480,6 +587,54 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                 )}
               </div>
             </div>
+
+            {/* Render Images Section */}
+            {(extractImagePrompts(result).length > 0 || Object.keys(generatedImages).length > 0) && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <ImageIcon size={20} className="text-indigo-600" />
+                    Ảnh đã tạo
+                  </h3>
+                  <button
+                    onClick={() => generateImages()}
+                    disabled={generatingImages || extractImagePrompts(result).length === 0}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  >
+                    {generatingImages ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                    Tạo ảnh
+                  </button>
+                </div>
+                
+                <div className="space-y-8">
+                  {extractImagePrompts(result).map((prompt, index) => (
+                    <div key={index} className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                      <h4 className="font-semibold text-slate-800 mb-2">Cảnh {index + 1}</h4>
+                      <p className="text-xs text-slate-500 mb-4">{prompt}</p>
+                      
+                      {generatedImages[index] ? (
+                        <div className="space-y-4">
+                          <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                            <img src={generatedImages[index]} alt={`Cảnh ${index + 1}`} className="w-full object-cover" />
+                          </div>
+                          <button
+                            onClick={() => handleDownloadImage(index, generatedImages[index])}
+                            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                          >
+                            <Download size={16} />
+                            Tải ảnh
+                          </button>
+                        </div>
+                      ) : generatingImages ? (
+                        <div className="w-full aspect-video bg-slate-200 animate-pulse rounded-xl flex items-center justify-center text-slate-400 border border-slate-200">
+                          <Loader2 size={24} className="animate-spin" />
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
