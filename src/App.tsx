@@ -702,7 +702,7 @@ Scene 2 – Front camera angle, [Character Description of ${parentRole}], [Chara
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-indigo-600 transition-colors text-slate-600 shadow-sm"
                     >
                       {copiedVocab ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                      {copiedVocab ? 'Đã chép' : 'Sao chép tất cả'}
+                      {copiedVocab ? 'Đã chép' : 'Sao chép Từ Vựng - Phiên âm'}
                     </button>
                     <button
                       onClick={() => copySection('IMAGE PROMPTS', setCopiedImage)}
